@@ -1,0 +1,85 @@
+@startuml
+
+class User {
+    - id: Int
+    - name: String
+    - email: String
+    - password: String
+}
+
+class Event {
+    - id: Int
+    - title: String
+    - background_image: String
+    - category: Category
+    - subcategory: SubCategory
+    - description: String
+    - event_start_date: Date
+    - event_end_date: Date
+    - location: Address
+    - entry_fee: Float
+    - host: User
+    - IsPrivate: Boolean
+}
+
+class Category {
+    -id: Int
+    -name: String
+    -subcategories: list<String>
+}
+
+
+class Subscription {
+    -subscriber: User
+    -subscribed_event: Event
+    -is_confirmed: Boolean
+    -is_favorited: Boolean
+}
+
+class Message {
+    -id: Int
+    -sender_id: Int
+    -receiver_id: Int
+    -content: String   
+    -date: Date
+}
+
+class Comment {
+    -id: Int
+    -author_id: Int
+    -event_id: Int
+    -content: String
+}
+
+class Address {
+    - country: String
+    - state: String
+    - city: String
+    - zip_code: String
+    - complement: String
+}
+
+class Notification {
+
+}
+
+class Profile {
+
+}
+
+class Chat {
+    -participants: List<User>
+    -messages: List<Message>
+}
+
+
+
+User "0..*" --> "0..*" Event : "participates in"
+(User, Event) .. Subscription
+User "0..*" --> "0..*" Chat : "participates in"
+Chat "1" *-- "0..*" Message
+User "1" --> "0..*" Comment: writes
+Event "0..*" o-- "1" Category
+Event "1"  *-- "0..*" Comment 
+
+@enduml
