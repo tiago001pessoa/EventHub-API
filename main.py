@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+import redis
 from flask import (
     Flask,
     abort,
@@ -25,12 +26,34 @@ from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Integer, String, Text, ForeignKey
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
+from flask_jwt_extended import (
+    create_access_token,
+    get_jwt_identity,
+    jwt_required,
+    JWTManager,
+    get_jwt,
+    verify_jwt_in_request,
+)
+
+ACCESS_EXPIRES = timedelta(hours=1)
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "8BYkEfBA6O6donzWlSihBXox7C0sKR6b"
+app.config["JWT_SECRET_KEY"] = "EzoJBiSSPiA8UhSxbSiDVp72lYSzxrAb"
+app.config["JWT_ACCESS_TOKEN_EXPIRES"] = ACCESS_EXPIRES
+jwt = JWTManager(app)
 
-login_manager = LoginManager()
-login_manager.init_app(app)
+# jwt_redis_blocklist = redis.StrictRedis(
+#     host="localhost", port=6379, db=0, decode_responses=True
+# )
+
+
+# Callback function to check if a JWT exists in the redis blocklist
+# @jwt.token_in_blocklist_loader
+# def check_if_token_is_revoked(jwt_header, jwt_payload: dict):
+#     jti = jwt_payload["jti"]
+#     token_in_redis = jwt_redis_blocklist.get(jti)
+#     return token_in_redis is not None
 
 
 # CREATE DB
@@ -143,19 +166,31 @@ with app.app_context():
     db.create_all()
 
 
+# @jwt.user_identity_loader
+# def user_identity_lookup(user):
+#     return user.id
+
+
+# @jwt.user_lookup_loader
+# def user_lookup_callback(_jwt_header, jwt_data):
+#     identity = jwt_data["sub"]
+#     return User.query.filter_by(id=identity).one_or_none()
+
+
 def admin_only(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if current_user.id != 1:
+        verify_jwt_in_request()
+        current_user_id = get_jwt_identity()
+        user = db.session.execute(
+            db.select(User).where(User.id == current_user_id)
+        ).scalar()
+
+        if user.id != 1:
             return jsonify({"message": "Only Admin users can perform this action"}), 403
         return f(*args, **kwargs)
 
     return decorated_function
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    return db.get_or_404(User, user_id)
 
 
 def parse_date(form_field):
@@ -194,28 +229,36 @@ def create_user():
 
 @app.route("/login", methods=["POST"])
 def login():
-    result = db.session.execute(
-        db.select(User).where(User.email == request.form["email"])
-    )
+    email = request.form["email"]
+    result = db.session.execute(db.select(User).where(User.email == email))
     user = result.scalar()
     if not user:
-        return jsonify({"message": "A user with that email doesn't exist!"}), 404
+        return jsonify({"message": "A user with that email doesn't exist!"}), 401
     elif not check_password_hash(user.password, request.form["password"]):
-        return jsonify({"message": "Password incorrect. Please try again."}), 400
+        return jsonify({"message": "Password incorrect. Please try again."}), 401
     else:
-        login_user(user)
-        return jsonify({"message": "User logged in successfully!"}), 200
+        access_token = create_access_token(identity=user.id)
+        return jsonify(access_token=access_token)
 
 
-@app.route("/logout")
-@login_required
+@app.route("/protected", methods=["GET"])
+@jwt_required()
+def protected():
+    # Access the identity of the current user with get_jwt_identity
+    current_user = get_jwt_identity()
+    return jsonify(logged_in_as=current_user), 200
+
+
+@app.route("/logout", methods=["DELETE"])
+@jwt_required()
 def logout():
-    logout_user()
-    return jsonify({"message": "User logged out successfully!"}), 200
+    # jti = get_jwt()["jti"]
+    # jwt_redis_blocklist.set(jti, "", ex=ACCESS_EXPIRES)
+    return jsonify(msg="Access token revoked")
 
 
 @app.route("/new-category", methods=["POST"])
-@login_required
+@jwt_required()
 @admin_only
 def create_category():
     result = db.session.execute(
@@ -232,7 +275,7 @@ def create_category():
 
 
 @app.route("/new-address", methods=["POST"])
-@login_required
+@jwt_required()
 @admin_only
 def add_address():
     new_address = Address(
@@ -248,7 +291,7 @@ def add_address():
 
 
 @app.route("/new-event", methods=["POST"])
-@login_required
+@jwt_required()
 def create_event():
     result = db.session.execute(
         db.select(Category).where(Category.name == request.form["category"])
@@ -281,7 +324,7 @@ def create_event():
 
 
 @app.route("/feed")  # This currently gets all events, not a subset of events
-@login_required
+@jwt_required()
 def get_all_events():
     result = db.session.execute(db.select(Event))
     all_events = result.scalars().all()
@@ -289,7 +332,7 @@ def get_all_events():
 
 
 @app.route("/event/<int:event_id>")
-@login_required
+@jwt_required()
 def get_event_by_id(event_id):
     event = db.session.execute(db.select(Event).where(Event.id == event_id)).scalar()
     if event:
@@ -299,7 +342,7 @@ def get_event_by_id(event_id):
 
 
 @app.route("/search")
-@login_required
+@jwt_required()
 def search_event_by_title():
     search_query = request.args.get("q")
     results = (
@@ -317,7 +360,7 @@ def search_event_by_title():
 
 
 @app.route("/event/<int:event_id>", methods=["POST"])
-@login_required
+@jwt_required()
 def update_event(event_id):
     event = db.session.execute(db.select(Event).where(Event.id == event_id)).scalar()
     if event:
@@ -352,7 +395,7 @@ def update_event(event_id):
 
 
 @app.route("/delete-event/<int:event_id>", methods=["DELETE"])
-@login_required
+@jwt_required()
 def delete_event(event_id):
     event_to_delete = db.get_or_404(Event, event_id)
     db.session.delete(event_to_delete)
@@ -360,14 +403,14 @@ def delete_event(event_id):
     return jsonify({"message": "Event deleted successfully!"}), 200
 
 
-@app.route(
-    "/delete-user/<int:user_id>"
-)  # THIS SHOULD ONLY WORK FOR THE CURRENT_USER'S ID
-def delete_user(user_id):
-    user_to_delete = db.get_or_404(User, user_id)
-    db.session.delete(user_to_delete)
-    db.session.commit()
-    return jsonify({"message": "User account deleted successfully!"}), 200
+# @app.route(
+#     "/delete-user/<int:user_id>"
+# )  # THIS SHOULD ONLY WORK FOR THE CURRENT_USER'S ID
+# def delete_user(user_id):
+#     user_to_delete = db.get_or_404(User, user_id)
+#     db.session.delete(user_to_delete)
+#     db.session.commit()
+#     return jsonify({"message": "User account deleted successfully!"}), 200
 
 
 if __name__ == "__main__":

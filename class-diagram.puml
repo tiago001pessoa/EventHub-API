@@ -30,10 +30,10 @@ class Category {
 
 
 class Subscription {
-    -subscriber: User
-    -subscribed_event: Event
+    -subscriber_id: user.id
+    -subscribed_event_id: event.id
     -is_confirmed: Boolean
-    -is_favorited: Boolean
+    -is_favorited: Boolean 
 }
 
 class Message {
@@ -44,11 +44,16 @@ class Message {
     -date: Date
 }
 
+class Thread {
+    -comments: List<Comment>
+}
+
 class Comment {
     -id: Int
     -author_id: Int
     -event_id: Int
     -content: String
+    -replies: List<Comment>
 }
 
 class Address {
@@ -59,27 +64,36 @@ class Address {
     - complement: String
 }
 
-class Notification {
-
-}
-
-class Profile {
-
-}
-
 class Chat {
     -participants: List<User>
     -messages: List<Message>
 }
 
+class Profile {
+    -pic: String
+    -created_at: Date
+    -date_of_birth: Date
+    -address: List<Address>
+    -confirmed_events: List<Event>
+    -favorited_events: List<Event>
+}
+
+class Notification {
+
+}
 
 
-User "0..*" --> "0..*" Event : "participates in"
+
+User "0..*" --> "0..*" Event : performs
 (User, Event) .. Subscription
-User "0..*" --> "0..*" Chat : "participates in"
+User "1..*" --o "1" Chat
 Chat "1" *-- "0..*" Message
 User "1" --> "0..*" Comment: writes
 Event "0..*" o-- "1" Category
-Event "1"  *-- "0..*" Comment 
+Event "1"  *-- "1" Thread
+Thread "1"  *-- "0..*" Comment
+Comment "1" *-- "0..*" Comment
+User "1" *-- "1" Profile
+
 
 @enduml
