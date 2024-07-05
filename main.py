@@ -34,6 +34,7 @@ from flask_jwt_extended import (
     get_jwt,
     verify_jwt_in_request,
 )
+from blacklist import BLACKLIST
 
 ACCESS_EXPIRES = timedelta(hours=1)
 
@@ -41,19 +42,14 @@ app = Flask(__name__)
 app.config["SECRET_KEY"] = "8BYkEfBA6O6donzWlSihBXox7C0sKR6b"
 app.config["JWT_SECRET_KEY"] = "EzoJBiSSPiA8UhSxbSiDVp72lYSzxrAb"
 app.config["JWT_ACCESS_TOKEN_EXPIRES"] = ACCESS_EXPIRES
+app.config["JWT_BLACKLIST_ENABLED"] = True
+app.config["JWT_BLACKLIST_TOKEN_CHECKS"] = ["access"]
 jwt = JWTManager(app)
 
-# jwt_redis_blocklist = redis.StrictRedis(
-#     host="localhost", port=6379, db=0, decode_responses=True
-# )
 
-
-# Callback function to check if a JWT exists in the redis blocklist
-# @jwt.token_in_blocklist_loader
-# def check_if_token_is_revoked(jwt_header, jwt_payload: dict):
-#     jti = jwt_payload["jti"]
-#     token_in_redis = jwt_redis_blocklist.get(jti)
-#     return token_in_redis is not None
+@jwt.token_in_blocklist_loader
+def check_if_token_in_blacklist(jwt_header, decrypted_token):
+    return decrypted_token["jti"] in BLACKLIST
 
 
 # CREATE DB
@@ -166,17 +162,6 @@ with app.app_context():
     db.create_all()
 
 
-# @jwt.user_identity_loader
-# def user_identity_lookup(user):
-#     return user.id
-
-
-# @jwt.user_lookup_loader
-# def user_lookup_callback(_jwt_header, jwt_data):
-#     identity = jwt_data["sub"]
-#     return User.query.filter_by(id=identity).one_or_none()
-
-
 def admin_only(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -241,20 +226,12 @@ def login():
         return jsonify(access_token=access_token)
 
 
-@app.route("/protected", methods=["GET"])
-@jwt_required()
-def protected():
-    # Access the identity of the current user with get_jwt_identity
-    current_user = get_jwt_identity()
-    return jsonify(logged_in_as=current_user), 200
-
-
-@app.route("/logout", methods=["DELETE"])
+@app.route("/logout", methods=["POST"])
 @jwt_required()
 def logout():
-    # jti = get_jwt()["jti"]
-    # jwt_redis_blocklist.set(jti, "", ex=ACCESS_EXPIRES)
-    return jsonify(msg="Access token revoked")
+    jti = get_jwt()["jti"]
+    BLACKLIST.add(jti)
+    return jsonify(msg="Successfully logged out"), 200
 
 
 @app.route("/new-category", methods=["POST"])
