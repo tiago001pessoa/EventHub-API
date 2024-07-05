@@ -13,14 +13,6 @@ from flask import (
 from flask_bootstrap import Bootstrap5
 from flask_ckeditor import CKEditor
 from flask_gravatar import Gravatar
-from flask_login import (
-    UserMixin,
-    login_user,
-    LoginManager,
-    current_user,
-    logout_user,
-    login_required,
-)
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Integer, String, Text, ForeignKey
@@ -63,7 +55,7 @@ db = SQLAlchemy(model_class=Base)
 db.init_app(app)
 
 
-class User(db.Model, UserMixin):
+class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
@@ -208,8 +200,13 @@ def create_user():
         )
         db.session.add(new_user)
         db.session.commit()
-        login_user(new_user)
-        return jsonify({"message": "User created successfully!"}), 201
+        access_token = create_access_token(identity=new_user.id)
+        return (
+            jsonify(
+                {"message": "User created successfully!", "access_token": access_token}
+            ),
+            201,
+        )
 
 
 @app.route("/login", methods=["POST"])
@@ -282,6 +279,8 @@ def create_event():
     )
     address = result2.scalar()
 
+    current_user_id = get_jwt_identity()
+
     parsed_start_date = parse_date("start-date")
     parsed_end_date = parse_date("end-date")
 
@@ -293,7 +292,7 @@ def create_event():
         event_end_date=parsed_end_date,
         location_id=address.id,
         entry_fee=request.form["entry-fee"],
-        host_id=current_user.id,
+        host_id=current_user_id,
     )
     db.session.add(new_event)
     db.session.commit()
@@ -353,6 +352,8 @@ def update_event(event_id):
         )
         address = result2.scalar()
 
+        current_user_id = get_jwt_identity()
+
         parsed_start_date = parse_date("start-date")
         parsed_end_date = parse_date("end-date")
 
@@ -363,7 +364,7 @@ def update_event(event_id):
         event.event_end_date = parsed_end_date
         event.location_id = address.id
         event.entry_fee = request.form["entry-fee"]
-        event.host_id = current_user.id
+        event.host_id = current_user_id
 
         db.session.commit()
         return jsonify({"message": "Event updated successfully!"}), 200
