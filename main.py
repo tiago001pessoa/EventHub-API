@@ -234,7 +234,7 @@ def logout():
     return jsonify(msg="Successfully logged out"), 200
 
 
-@app.route("/new-category", methods=["POST"])
+@app.route("/category", methods=["POST"])
 @jwt_required()
 @admin_only
 def create_category():
@@ -251,7 +251,7 @@ def create_category():
         return jsonify({"message": "Category created successfully!"}), 201
 
 
-@app.route("/new-address", methods=["POST"])
+@app.route("/address", methods=["POST"])
 @jwt_required()
 @admin_only
 def add_address():
@@ -267,7 +267,7 @@ def add_address():
     return jsonify({"message": "Address created successfully!"}), 201
 
 
-@app.route("/new-event", methods=["POST"])
+@app.route("/event", methods=["POST"])
 @jwt_required()
 def create_event():
     result = db.session.execute(
@@ -336,7 +336,7 @@ def search_event_by_title():
         )
 
 
-@app.route("/event/<int:event_id>", methods=["POST"])
+@app.route("/event/<int:event_id>", methods=["PUT"])
 @jwt_required()
 def update_event(event_id):
     event = db.session.execute(db.select(Event).where(Event.id == event_id)).scalar()
