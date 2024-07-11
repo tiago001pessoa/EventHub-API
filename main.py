@@ -60,7 +60,9 @@ class User(db.Model):
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
-    events = db.relationship("Event", secondary="subscribe", back_populates="users")
+    events = db.relationship(
+        "Event", secondary="event_attendance", back_populates="users"
+    )
     messages_sent = db.relationship(
         "Message", foreign_keys="Message.sender_id", back_populates="sender"
     )
@@ -68,16 +70,17 @@ class User(db.Model):
         "Message", foreign_keys="Message.receiver_id", back_populates="receiver"
     )
     comments = db.relationship("Comment", back_populates="author")
+    profile = db.relationship("Profile", uselist=False, back_populates="user")
+    chats = db.relationship(
+        "Chat", secondary="user_chat", back_populates="participants"
+    )
 
 
 class Event(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100), nullable=False)
-    background_image = db.Column(
-        db.String(255)
-    )  # THIS IS SUPPOSED TO HAVE A DEFAULT VALUE BRO
+    background_image = db.Column(db.String(255))
     category_id = db.Column(db.Integer, db.ForeignKey("category.id"), nullable=False)
-    subcategory_id = db.Column(db.Integer, db.ForeignKey("sub_category.id"))
     description = db.Column(db.Text)
     event_start_date = db.Column(db.DateTime, nullable=False)
     event_end_date = db.Column(db.DateTime, nullable=False)
@@ -85,9 +88,10 @@ class Event(db.Model):
     entry_fee = db.Column(db.Float, nullable=False)
     host_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     is_private = db.Column(db.Boolean, default=False, nullable=False)
-    users = db.relationship("User", secondary="subscribe", back_populates="events")
+    users = db.relationship(
+        "User", secondary="event_attendance", back_populates="events"
+    )
     category = db.relationship("Category", back_populates="events")
-    subcategory = db.relationship("SubCategory", back_populates="events")
     location = db.relationship("Address", back_populates="events")
     comments = db.relationship("Comment", back_populates="event")
 
@@ -97,20 +101,14 @@ class Event(db.Model):
         }
 
 
-class Category(db.Model):  # THIS SHOULD HAVE A ICON_URL ATTRIBUTE
+class Category(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
+    subcategory = db.Column(db.String(100), nullable=True)
     events = db.relationship("Event", back_populates="category")
 
 
-class SubCategory(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    category_id = db.Column(db.Integer, db.ForeignKey("category.id"))
-    events = db.relationship("Event", back_populates="subcategory")
-
-
-class Subscribe(db.Model):
+class EventAttendance(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), primary_key=True)
     is_confirmed = db.Column(db.Boolean, default=False)
@@ -121,6 +119,7 @@ class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sender_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     receiver_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    chat_id = db.Column(db.Integer, db.ForeignKey("chat.id"), nullable=False)
     content = db.Column(db.Text, nullable=False)
     date = db.Column(db.DateTime, default=datetime.now())
     sender = db.relationship(
@@ -129,15 +128,23 @@ class Message(db.Model):
     receiver = db.relationship(
         "User", foreign_keys=[receiver_id], back_populates="messages_received"
     )
+    chat = db.relationship("Chat", back_populates="messages")
 
 
 class Comment(db.Model):
+    __tablename__ = "comment"
     id = db.Column(db.Integer, primary_key=True)
     author_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     event_id = db.Column(db.Integer, db.ForeignKey("event.id"), nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey("comment.id"), nullable=True)
     content = db.Column(db.Text, nullable=False)
+    replies = db.relationship("Comment", back_populates="parent", remote_side=[id])
     author = db.relationship("User", back_populates="comments")
     event = db.relationship("Event", back_populates="comments")
+    replies = db.relationship("Comment", back_populates="parent", remote_side=[id])
+    parent = db.relationship(
+        "Comment", back_populates="replies", remote_side=[parent_id]
+    )
 
 
 class Address(db.Model):
@@ -146,11 +153,37 @@ class Address(db.Model):
     state = db.Column(db.String(100), nullable=False)
     city = db.Column(db.String(100), nullable=False)
     zip_code = db.Column(db.String(20), nullable=False)
-    complement = db.Column(db.String(255))  # THIS IS NOT SUPPOSED TO BE NULLABLE
+    complement = db.Column(db.String(255), nullable=False)
     events = db.relationship("Event", back_populates="location")
+    residents = db.relationship("Profile", back_populates="address")
+
+
+class Profile(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    pic = db.Column(db.String(255))
+    created_at = db.Column(db.DateTime, default=datetime.now())
+    date_of_birth = db.Column(db.Date)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
+    address_id = db.Column(db.Integer, db.ForeignKey("address.id"), nullable=False)
+    user = db.relationship("User", back_populates="profile")
+    address = db.relationship("Address", back_populates="residents")
+
+
+class Chat(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    participants = db.relationship(
+        "User", secondary="user_chat", back_populates="chats"
+    )
+    messages = db.relationship("Message", back_populates="chat")
+
+
+class UserChat(db.Model):
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
+    chat_id = db.Column(db.Integer, db.ForeignKey("chat.id"), primary_key=True)
 
 
 with app.app_context():
+    # db.drop_all()
     db.create_all()
 
 
