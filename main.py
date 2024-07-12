@@ -205,7 +205,8 @@ def admin_only(f):
 
 def parse_date(form_field):
     date_format = "%Y-%m-%dT%H:%M:%S"
-    date_string = request.form[form_field]
+    data = request.get_json()
+    date_string = data.get(form_field)
     return datetime.strptime(date_string, date_format)
 
 
@@ -411,16 +412,17 @@ def search_event_by_title():
 @app.route("/event/<int:event_id>", methods=["PUT"])
 @jwt_required()
 def update_event(event_id):
+    data = request.get_json()
     event = db.session.execute(db.select(Event).where(Event.id == event_id)).scalar()
     if event:
         result = db.session.execute(
-            db.select(Category).where(Category.name == request.form["category"])
+            db.select(Category).where(Category.name == data.get("category"))
         )
         category = result.scalar()
 
         result2 = db.session.execute(
             db.select(Address).where(
-                Address.complement == request.form["location"]
+                Address.complement == data.get("location")
             )  # THIS DOESNT REALLY MATTER, WE'LL BE USING AN API FOR THIS LATER.
         )
         address = result2.scalar()
@@ -430,14 +432,15 @@ def update_event(event_id):
         parsed_start_date = parse_date("start-date")
         parsed_end_date = parse_date("end-date")
 
-        event.title = request.form["title"]
+        event.title = data.get("title")
         event.category_id = category.id
-        event.description = request.form["description"]
+        event.description = data.get("description")
         event.event_start_date = parsed_start_date
         event.event_end_date = parsed_end_date
         event.location_id = address.id
-        event.entry_fee = request.form["entry-fee"]
+        event.entry_fee = data.get("entry-fee")
         event.host_id = current_user_id
+        event.is_private = data.get("is_private")
 
         db.session.commit()
         return jsonify({"message": "Event updated successfully!"}), 200
