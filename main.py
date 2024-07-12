@@ -214,6 +214,14 @@ def home():
     return render_template("index.html")
 
 
+@app.route("/feed")  # This currently gets all events, not a subset of events
+@jwt_required()
+def get_all_events():
+    result = db.session.execute(db.select(Event))
+    all_events = result.scalars().all()
+    return jsonify(events=[event.to_dict() for event in all_events])
+
+
 @app.route("/register", methods=["POST"])
 def create_user():
     result = db.session.execute(
@@ -332,22 +340,54 @@ def create_event():
     return jsonify({"message": "Event created successfully!"}), 201
 
 
-@app.route("/feed")  # This currently gets all events, not a subset of events
-@jwt_required()
-def get_all_events():
-    result = db.session.execute(db.select(Event))
-    all_events = result.scalars().all()
-    return jsonify(events=[event.to_dict() for event in all_events])
-
-
-@app.route("/event/<int:event_id>")
+@app.route("/event/<int:event_id>", methods=["GET", "PUT"])
 @jwt_required()
 def get_event_by_id(event_id):
-    event = db.session.execute(db.select(Event).where(Event.id == event_id)).scalar()
-    if event:
-        return jsonify(event.to_dict()), 200
+    if request.method == "PUT":
+        user_id = get_jwt_identity()
+        data = request.get_json()
+        is_confirmed = data.get("is_confirmed", False)
+        is_favorited = data.get("is_favorited", False)
+
+        if is_confirmed and is_favorited:
+            return (
+                jsonify(
+                    {
+                        "message": "Cannot confirm and favorite an event at the same time."
+                    }
+                ),
+                400,
+            )
+
+        event_attendance = EventAttendance.query.filter_by(
+            user_id=user_id, event_id=event_id
+        ).first()
+
+        if event_attendance:
+            event_attendance.is_confirmed = is_confirmed
+            event_attendance.is_favorited = is_favorited
+            if not is_confirmed and not is_favorited:
+                db.session.delete(event_attendance)
+        else:
+            if is_confirmed or is_favorited:
+                event_attendance = EventAttendance(
+                    user_id=user_id,
+                    event_id=event_id,
+                    is_confirmed=is_confirmed,
+                    is_favorited=is_favorited,
+                )
+                db.session.add(event_attendance)
+
+        db.session.commit()
+        return jsonify({"message": "Event attendance updated successfully"}), 200
     else:
-        return jsonify({"message": "An event with that id doesn't exist!"}), 404
+        event = db.session.execute(
+            db.select(Event).where(Event.id == event_id)
+        ).scalar()
+        if event:
+            return jsonify(event.to_dict()), 200
+        else:
+            return jsonify({"message": "An event with that id doesn't exist!"}), 404
 
 
 @app.route("/search")
