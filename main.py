@@ -15,7 +15,7 @@ from flask_ckeditor import CKEditor
 from flask_gravatar import Gravatar
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import relationship, DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import Integer, String, Text, ForeignKey
+from sqlalchemy import Integer, String, Text, ForeignKey, func
 from functools import wraps
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import (
@@ -385,8 +385,21 @@ def get_event_by_id(event_id):
         event = db.session.execute(
             db.select(Event).where(Event.id == event_id)
         ).scalar()
+
+        event_attendences = db.session.execute(
+            db.select(func.count(EventAttendance.event_id)).where(
+                EventAttendance.event_id == event_id
+            )
+        ).scalar()
+
+        event_details_dict = event.to_dict()
+
+        participants = {"responses": event_attendences}
+
+        event_details_dict.update(participants)
+
         if event:
-            return jsonify(event.to_dict()), 200
+            return jsonify(event_details_dict), 200
         else:
             return jsonify({"message": "An event with that id doesn't exist!"}), 404
 
