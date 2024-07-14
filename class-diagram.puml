@@ -29,24 +29,24 @@ class Category {
 }
 
 
-class Subscription {
-    -subscriber_id: user.id
-    -subscribed_event_id: event.id
+class EventAttendance {
+    -user_id: user.id
+    -event_id: event.id
     -is_confirmed: Boolean
     -is_favorited: Boolean 
 }
 
 class UserChat {
     user_id: user.id
-    event_id: event.id
+    chat_id: chat.id
 }
 
 class Message {
     -id: Int
+    -chat_id: chat.id
     -sender_id: Int
-    -receiver_id: Int
     -content: String   
-    -date: Date
+    -sent_at: Date
 }
 
 
@@ -67,6 +67,7 @@ class Address {
 }
 
 class Chat {
+    -id: Int
     -participants: List<User>
     -messages: List<Message>
 }
@@ -81,13 +82,19 @@ class Profile {
     -subscribed_events: List<Event>
 }
 
+class ReadMessage {
+    -message_id: message.id
+    -user_id: user.id
+    -read_at: Date
+}
+
 class Notification {
 
 }
 
 
 
-(User, Event) .. Subscription
+(User, Event) .. EventAttendance
 (User, Chat) .. UserChat
 Event "1" o-- "0..*" Comment
 Chat "1" *-- "0..*" Message
@@ -95,6 +102,7 @@ Event "0..*" o-- "1" Category
 Comment "1" *-- "0..*" Comment
 User "1" *-- "1" Profile
 Profile "1" o-- "0..*" Address
+Message "1" *-- "1" ReadMessage
 
 
 @enduml

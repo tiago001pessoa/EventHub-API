@@ -66,9 +66,7 @@ class User(db.Model):
     messages_sent = db.relationship(
         "Message", foreign_keys="Message.sender_id", back_populates="sender"
     )
-    messages_received = db.relationship(
-        "Message", foreign_keys="Message.receiver_id", back_populates="receiver"
-    )
+    read_messages = relationship("ReadMessage", back_populates="user")
     comments = db.relationship("Comment", back_populates="author")
     profile = db.relationship("Profile", uselist=False, back_populates="user")
     chats = db.relationship(
@@ -118,17 +116,14 @@ class EventAttendance(db.Model):
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sender_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
-    receiver_id = db.Column(db.Integer, db.ForeignKey("user.id"), nullable=False)
     chat_id = db.Column(db.Integer, db.ForeignKey("chat.id"), nullable=False)
     content = db.Column(db.Text, nullable=False)
-    date = db.Column(db.DateTime, default=datetime.now())
+    sent_at = db.Column(db.DateTime, default=datetime.now())
     sender = db.relationship(
         "User", foreign_keys=[sender_id], back_populates="messages_sent"
     )
-    receiver = db.relationship(
-        "User", foreign_keys=[receiver_id], back_populates="messages_received"
-    )
     chat = db.relationship("Chat", back_populates="messages")
+    read_by_users = db.relationship("ReadMessage", back_populates="message")
 
 
 class Comment(db.Model):
@@ -180,6 +175,14 @@ class Chat(db.Model):
 class UserChat(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
     chat_id = db.Column(db.Integer, db.ForeignKey("chat.id"), primary_key=True)
+
+
+class ReadMessage(db.Model):
+    message_id = db.Column(db.Integer, db.ForeignKey("message.id"), primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
+    read_at = db.Column(db.DateTime, default=datetime.now())
+    message = db.relationship("Message", back_populates="read_by_users")
+    user = db.relationship("User", back_populates="read_messages")
 
 
 with app.app_context():
