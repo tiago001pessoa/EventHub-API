@@ -55,13 +55,22 @@ db = SQLAlchemy(model_class=Base)
 db.init_app(app)
 
 
+class DictMixin:
+    def to_dict(self):
+        return {
+            column.name: getattr(self, column.name) for column in self.__table__.columns
+        }
+
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
     password = db.Column(db.String(100), nullable=False)
     events = db.relationship(
-        "Event", secondary="event_attendance", back_populates="users"
+        "Event",
+        secondary="event_attendance",
+        back_populates="users",  # i think this broke
     )
     messages_sent = db.relationship(
         "Message", foreign_keys="Message.sender_id", back_populates="sender"
@@ -69,12 +78,10 @@ class User(db.Model):
     read_messages = relationship("ReadMessage", back_populates="user")
     comments = db.relationship("Comment", back_populates="author")
     profile = db.relationship("Profile", uselist=False, back_populates="user")
-    chats = db.relationship(
-        "Chat", secondary="user_chat", back_populates="participants"
-    )
+    chats = db.relationship("UserChat", back_populates="user")
 
 
-class Event(db.Model):
+class Event(db.Model, DictMixin):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(100), nullable=False)
     background_image = db.Column(db.String(255))
@@ -92,11 +99,6 @@ class Event(db.Model):
     category = db.relationship("Category", back_populates="events")
     location = db.relationship("Address", back_populates="events")
     comments = db.relationship("Comment", back_populates="event")
-
-    def to_dict(self):
-        return {
-            column.name: getattr(self, column.name) for column in self.__table__.columns
-        }
 
 
 class Category(db.Model):
@@ -164,17 +166,17 @@ class Profile(db.Model):
     address = db.relationship("Address", back_populates="residents")
 
 
-class Chat(db.Model):
+class Chat(db.Model, DictMixin):
     id = db.Column(db.Integer, primary_key=True)
-    participants = db.relationship(
-        "User", secondary="user_chat", back_populates="chats"
-    )
+    participants = db.relationship("UserChat", back_populates="chat")
     messages = db.relationship("Message", back_populates="chat")
 
 
 class UserChat(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey("user.id"), primary_key=True)
     chat_id = db.Column(db.Integer, db.ForeignKey("chat.id"), primary_key=True)
+    user = db.relationship("User", back_populates="chats")
+    chat = db.relationship("Chat", back_populates="participants")
 
 
 class ReadMessage(db.Model):
@@ -312,31 +314,31 @@ def add_address():
 @app.route("/event", methods=["POST"])
 @jwt_required()
 def create_event():
+    data = request.get_json()
+
     result = db.session.execute(
-        db.select(Category).where(Category.name == request.form["category"])
+        db.select(Category).where(Category.name == data["category"])
     )
     category = result.scalar()
 
     result2 = db.session.execute(
-        db.select(Address).where(
-            Address.complement == request.form["location"]
-        )  # THIS DOESNT REALLY MATTER, WE'LL BE USING AN API FOR THIS LATER.
+        db.select(Address).where(Address.complement == data["location"])
     )
     address = result2.scalar()
 
     current_user_id = get_jwt_identity()
 
-    parsed_start_date = parse_date("start-date")
-    parsed_end_date = parse_date("end-date")
+    parsed_start_date = datetime.strptime(data["start-date"], "%Y-%m-%dT%H:%M:%S")
+    parsed_end_date = datetime.strptime(data["end-date"], "%Y-%m-%dT%H:%M:%S")
 
     new_event = Event(
-        title=request.form["title"],
+        title=data["title"],
         category_id=category.id,
-        description=request.form["description"],
+        description=data["description"],
         event_start_date=parsed_start_date,
         event_end_date=parsed_end_date,
         location_id=address.id,
-        entry_fee=request.form["entry-fee"],
+        entry_fee=data["entry-fee"],
         host_id=current_user_id,
     )
     db.session.add(new_event)
@@ -473,14 +475,34 @@ def delete_event(event_id):
     return jsonify({"message": "Event deleted successfully!"}), 200
 
 
-# @app.route(
-#     "/delete-user/<int:user_id>"
-# )  # THIS SHOULD ONLY WORK FOR THE CURRENT_USER'S ID
-# def delete_user(user_id):
-#     user_to_delete = db.get_or_404(User, user_id)
-#     db.session.delete(user_to_delete)
-#     db.session.commit()
-#     return jsonify({"message": "User account deleted successfully!"}), 200
+@app.route("/messages", methods=["POST"])
+@jwt_required()
+def create_chat():
+    current_user_id = get_jwt_identity()
+    data = request.get_json()
+    participant_ids = data.get("participants", [])
+
+    if not isinstance(participant_ids, list):
+        return jsonify({"error": "Participants must be a list of user IDs"}), 400
+
+    if current_user_id not in participant_ids:
+        participant_ids.append(current_user_id)
+
+    participants = User.query.filter(User.id.in_(participant_ids)).all()
+    if not participants:
+        return jsonify({"error": "Invalid participants"}), 400
+
+    chat = Chat()
+    db.session.add(chat)
+    db.session.commit()
+
+    for participant in participants:
+        user_chat = UserChat(user_id=participant.id, chat_id=chat.id)
+        db.session.add(user_chat)
+
+    db.session.commit()
+
+    return jsonify({"message": "Chat created successfully!"}), 201
 
 
 if __name__ == "__main__":
